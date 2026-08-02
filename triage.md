@@ -1,101 +1,70 @@
-# Incident Triage — 502 Bad Gateway / ALB Unhealthy Targets
+# Incident Post-Mortem — ALB 502 / Unhealthy Targets
 
-**Environment:** EC2 + Docker behind ALB in ap-southeast-1
-**Symptom:** Intermittent 502 from ALB, targets marked unhealthy
+**Environment:** EC2 + Docker, ALB ap-southeast-1
+**Symptom:** Intermittent 502, targets unhealthy — container is running fine
 
----
+## 1. Why manual testing passes but ALB fails
 
-## Root Cause (short answer)
+Developers test directly against `/api/users`, `/api/products`, `/api/health` on port 3000 — all return 200. The ALB healthcheck probes `GET /` on port 3000. The app has no root `/` handler, so it returns 404. ALB marks the target unhealthy and returns 502. The two validation paths never overlap.
 
-ALB healthcheck hits the EC2 instance on port 80, but the container only binds to port 3000. The EC2 Security Group allows traffic from the ALB Security Group, but nothing is listening on port 80 at the OS level — so the healthcheck TCP connection is refused, targets go unhealthy, and ALB returns 502 to clients.
+## 2. Root causes
 
----
+- Healthcheck path `/` doesn't exist in the app — only `/api/*` routes are defined
+- No deploy-time validation that the healthcheck path actually returns 2xx
 
-## Step 1 — Confirm the symptom
+## 3. Troubleshooting steps
 
-Check ALB metrics in CloudWatch: `HTTPCode_ELB_502_Count` and `HealthyHostCount`. Confirm targets are actually 0 healthy.
+1. Check ALB target health and healthcheck config
+2. Curl the healthcheck path directly from EC2 against the container
+3. Confirm available routes vs configured healthcheck path
+4. Fix healthcheck path, verify target flips healthy
+
+## 4. CLI commands on EC2
 
 ```bash
-aws elbv2 describe-target-health \
-  --target-group-arn <target-group-arn> \
-  --region ap-southeast-1
+curl -v http://localhost:3000/
+curl -v http://localhost:3000/api/health
+docker logs <container_id> --tail 100 | grep '"GET / '
+ss -tlnp sport = :3000
 ```
 
-Expected bad state: `"State": "unhealthy"`, `"Description": "Health checks failed"`.
+## 5. AWS components to audit
 
-## Step 2 — Check ALB target group config
+- ALB access logs: filter `GET /` returning 404
+- CloudWatch: `HealthyHostCount`, `HTTPCode_Target_4XX_Count`
+- Target group config: `HealthCheckPath`, `Matcher`
 
 ```bash
 aws elbv2 describe-target-groups \
-  --target-group-arns <target-group-arn> \
-  --region ap-southeast-1
+  --target-group-arns <arn> \
+  --query 'TargetGroups[*].{Path:HealthCheckPath,Port:HealthCheckPort}'
 ```
 
-Note the `HealthCheckPort` and `HealthCheckPath`. If `HealthCheckPort` is `traffic-port` and listener is on 80, ALB probes port 80 on EC2 — which has nothing listening.
+## 6. Fix
 
-## Step 3 — Verify what's actually listening on EC2
-
-SSH into the instance:
-
-```bash
-ss -tlnp
-```
-
-You'll see port 3000 bound to the container, but nothing on 80.
-
-## Step 4 — Check Docker container state
-
-```bash
-docker ps -a
-docker logs <container_id> --tail 50
-```
-
-Confirm the container is running and the app is up on port 3000. If the container is crash-looping, that's a separate issue — fix app first.
-
-## Step 5 — Identify the port mismatch
-
-```bash
-docker inspect <container_id> | grep -A5 Ports
-```
-
-If `HostPort` is empty or 0, the container port isn't exposed to the host. The run command needs `-p 80:3000` or `-p 3000:3000`.
-
-## Step 6 — Fix
-
-Two options, pick one:
-
-**Option A — Fix port mapping (preferred if app can't change)**
-
-```bash
-docker stop <container_id>
-docker run -d -p 3000:3000 --name api your-image:tag
-```
-
-Then update ALB target group healthcheck port to 3000 in the console or via CLI:
+Update healthcheck path to an existing endpoint:
 
 ```bash
 aws elbv2 modify-target-group \
   --target-group-arn <arn> \
-  --health-check-port 3000 \
+  --health-check-path /api/health \
   --region ap-southeast-1
 ```
 
-**Option B — Add nginx on EC2 as reverse proxy on port 80 → 3000**
-
-Useful if ALB config is locked or shared across services.
-
-## Step 7 — Verify recovery
-
-```bash
-aws elbv2 describe-target-health \
-  --target-group-arn <arn> \
-  --region ap-southeast-1
+Or add a root handler in the app:
+```javascript
+app.get('/', (req, res) => res.status(200).json({ status: 'ok' }))
 ```
 
-Wait ~30s (2 healthcheck intervals). Targets should return `"State": "healthy"`. Hit `api.company.com` and confirm 200 responses.
+## 7. Prevention in CI/CD
 
----
+Add a post-deploy step that curls the healthcheck path before marking deploy successful:
 
-## Why this happens
+```yaml
+- name: healthcheck gate
+  run: |
+    STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$EC2_IP:3000/api/health)
+    [ "$STATUS" = "200" ] || (echo "healthcheck failed" && exit 1)
+```
 
-ALB healthcheck and app port are configured independently. It's easy to set listener on 80/443 and forget to also point the healthcheck at the actual container port (3000). EC2 SG being scoped to ALB SG is correct — it just means once the port is right, traffic flows through cleanly.
+Enforce that the ALB `HealthCheckPath` must exist in the app's route list — validated at PR time.
