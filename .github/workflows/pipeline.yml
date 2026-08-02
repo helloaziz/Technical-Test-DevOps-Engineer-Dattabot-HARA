@@ -1,0 +1,112 @@
+name: deploy
+
+on:
+  push:
+    branches: [dev, main]
+
+env:
+  IMAGE_NAME: ${{ secrets.DOCKER_USER }}/api-app
+
+jobs:
+  ci:
+    runs-on: ubuntu-24.04
+    if: github.ref == 'refs/heads/dev'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+
+      - name: notify on failure
+        if: failure()
+        run: |
+          curl -s -X POST "${{ secrets.SLACK_WEBHOOK }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"text\":\"❌ CI failed on dev — <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|view run>\"}"
+
+  deploy-dev:
+    needs: ci
+    runs-on: ubuntu-24.04
+    if: github.ref == 'refs/heads/dev'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USER }}
+          password: ${{ secrets.DOCKER_PASS }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          push: true
+          tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+      - name: rolling deploy to dev
+        run: |
+          echo "deploying ${{ github.sha }} to dev cluster"
+          # kubectl set image deployment/api api=${{ env.IMAGE_NAME }}:${{ github.sha }} -n dev
+
+      - name: notify on failure
+        if: failure()
+        run: |
+          curl -s -X POST "${{ secrets.SLACK_WEBHOOK }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"text\":\"❌ Deploy to dev failed — ${{ github.sha }}\"}"
+
+  build-prod:
+    runs-on: ubuntu-24.04
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USER }}
+          password: ${{ secrets.DOCKER_PASS }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.IMAGE_NAME }}:latest
+
+      - name: notify on failure
+        if: failure()
+        run: |
+          curl -s -X POST "${{ secrets.SLACK_WEBHOOK }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"text\":\"❌ Prod build failed — ${{ github.sha }}\"}"
+
+  approve:
+    needs: build-prod
+    runs-on: ubuntu-24.04
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    steps:
+      - run: echo "approved — proceeding to production deploy"
+
+  deploy-prod:
+    needs: approve
+    runs-on: ubuntu-24.04
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: deploy to production
+        run: |
+          echo "deploying ${{ github.sha }} to production"
+          # kubectl set image deployment/api api=${{ env.IMAGE_NAME }}:${{ github.sha }} -n prod
+
+      - name: notify on failure
+        if: failure()
+        run: |
+          curl -s -X POST "${{ secrets.SLACK_WEBHOOK }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"text\":\"❌ Production deploy failed — ${{ github.sha }}\"}"

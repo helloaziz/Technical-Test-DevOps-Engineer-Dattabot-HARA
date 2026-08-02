@@ -1,0 +1,104 @@
+aws_vpc.main: Refreshing state... [id=vpc-672f1900]
+aws_subnet.pub_b: Refreshing state... [id=subnet-3827585f]
+aws_internet_gateway.igw: Refreshing state... [id=igw-ce681c9d]
+aws_subnet.pub_a: Refreshing state... [id=subnet-a25609d6]
+aws_security_group.ec2_sg: Refreshing state... [id=sg-a934f9c52b097c9c4]
+aws_route_table.pub: Refreshing state... [id=rtb-f2a6f752]
+aws_instance.web: Refreshing state... [id=i-131021507c75003cf]
+aws_route_table_association.pub_a: Refreshing state... [id=rtbassoc-f6d5c9bd]
+aws_route_table_association.pub_b: Refreshing state... [id=rtbassoc-ad71f4cc]
+
+Terraform used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+-/+ destroy and then create replacement
+
+Terraform will perform the following actions:
+
+  # aws_instance.web must be replaced
+-/+ resource "aws_instance" "web" {
+      ~ ami                                  = "ami-bca8ea11" -> "ami-0c55b159cbfafe1f0" # forces replacement
+      ~ arn                                  = "arn:aws:ec2:ap-southeast-1::instance/i-131021507c75003cf" -> (known after apply)
+      ~ availability_zone                    = "ap-southeast-1a" -> (known after apply)
+      + cpu_core_count                       = (known after apply)
+      + cpu_threads_per_core                 = (known after apply)
+      ~ disable_api_stop                     = false -> (known after apply)
+      ~ disable_api_termination              = false -> (known after apply)
+      ~ ebs_optimized                        = false -> (known after apply)
+      + enable_primary_ipv6                  = (known after apply)
+      - hibernation                          = false -> null
+      + host_id                              = (known after apply)
+      + host_resource_group_arn              = (known after apply)
+      + iam_instance_profile                 = (known after apply)
+      ~ id                                   = "i-131021507c75003cf" -> (known after apply)
+      ~ instance_initiated_shutdown_behavior = "stop" -> (known after apply)
+      + instance_lifecycle                   = (known after apply)
+      ~ instance_state                       = "running" -> (known after apply)
+      ~ ipv6_address_count                   = 0 -> (known after apply)
+      ~ ipv6_addresses                       = [] -> (known after apply)
+      + key_name                             = (known after apply)
+      ~ monitoring                           = false -> (known after apply)
+      + outpost_arn                          = (known after apply)
+      + password_data                        = (known after apply)
+      + placement_group                      = (known after apply)
+      ~ placement_partition_number           = 0 -> (known after apply)
+      ~ primary_network_interface_id         = "eni-0c053309" -> (known after apply)
+      ~ private_dns                          = "ip-172-16-0-4.ap-southeast-1.compute.internal" -> (known after apply)
+      ~ private_ip                           = "172.16.0.4" -> (known after apply)
+      ~ public_dns                           = "ec2-54-214-213-77.ap-southeast-1.compute.amazonaws.com" -> (known after apply)
+      ~ public_ip                            = "54.214.213.77" -> (known after apply)
+      ~ secondary_private_ips                = [] -> (known after apply)
+      ~ security_groups                      = [] -> (known after apply)
+      + spot_instance_request_id             = (known after apply)
+        tags                                 = {
+            "Name" = "infra-test-ec2"
+        }
+      ~ tenancy                              = "default" -> (known after apply)
+      + user_data                            = (known after apply)
+      + user_data_base64                     = (known after apply)
+      ~ vpc_security_group_ids               = [
+          + "sg-a934f9c52b097c9c4",
+        ]
+        # (7 unchanged attributes hidden)
+
+      ~ capacity_reservation_specification (known after apply)
+
+      ~ cpu_options (known after apply)
+
+      ~ ebs_block_device (known after apply)
+
+      ~ enclave_options (known after apply)
+
+      ~ ephemeral_block_device (known after apply)
+
+      ~ instance_market_options (known after apply)
+
+      ~ maintenance_options (known after apply)
+
+      ~ metadata_options (known after apply)
+
+      ~ network_interface (known after apply)
+
+      ~ private_dns_name_options (known after apply)
+
+      ~ root_block_device {
+          ~ device_name           = "/dev/sda1" -> (known after apply)
+          ~ encrypted             = false -> (known after apply)
+          ~ iops                  = 3000 -> (known after apply)
+          + kms_key_id            = (known after apply)
+          - tags                  = {} -> null
+          ~ tags_all              = {} -> (known after apply)
+          ~ throughput            = 0 -> (known after apply)
+          ~ volume_id             = "vol-5f54e8be" -> (known after apply)
+            # (3 unchanged attributes hidden)
+        }
+    }
+
+Plan: 1 to add, 0 to change, 1 to destroy.
+
+Changes to Outputs:
+  ~ ec2_public_ip = "54.214.213.77" -> (known after apply)
+
+─────────────────────────────────────────────────────────────────────────────
+
+Note: You didn't use the -out option to save this plan, so Terraform can't
+guarantee to take exactly these actions if you run "terraform apply" now.
